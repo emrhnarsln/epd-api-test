@@ -73,7 +73,7 @@ def public_base_url() -> str:
 def actions_openapi_schema() -> dict[str, Any]:
     """Small OpenAPI schema tailored for ChatGPT GPT Actions."""
     return {
-        "openapi": "3.0.3",
+        "openapi": "3.1.0",
         "info": {
             "title": "EPD Content API Actions",
             "description": "Search and retrieve EPD course content and quiz questions.",
