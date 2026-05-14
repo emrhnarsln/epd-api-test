@@ -148,7 +148,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                             "name": "limit",
                             "in": "query",
                             "required": False,
-                            "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20},
                         },
                     ],
                     "responses": {
@@ -178,7 +178,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                             "name": "limit",
                             "in": "query",
                             "required": False,
-                            "schema": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
                         },
                     ],
                     "responses": {"200": {"description": "Search results", "content": {"application/json": {"schema": search_result_array_schema()}}}},
@@ -197,7 +197,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                             "name": "limit",
                             "in": "query",
                             "required": False,
-                            "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
                         },
                     ],
                     "responses": {"200": {"description": "Lesson records", "content": {"application/json": {"schema": search_result_array_schema()}}}},
@@ -222,7 +222,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                             "name": "limit",
                             "in": "query",
                             "required": False,
-                            "schema": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
                         },
                     ],
                     "responses": {
@@ -239,14 +239,27 @@ def actions_openapi_schema() -> dict[str, Any]:
                                                 "language": {"type": "string"},
                                                 "course_title": {"type": "string"},
                                                 "question": {"type": "string"},
-                                                "options": {
-                                                    "type": "object",
-                                                    "additionalProperties": {"type": "string"},
-                                                },
+                                                "option_a": {"type": "string"},
+                                                "option_b": {"type": "string"},
+                                                "option_c": {"type": "string"},
+                                                "option_d": {"type": "string"},
+                                                "option_e": {"type": "string"},
                                                 "correct_answer": {"type": "string"},
                                                 "source_file": {"type": "string"},
                                             },
-                                            "required": ["question", "options"],
+                                            "required": [
+                                                "folder_id",
+                                                "language",
+                                                "course_title",
+                                                "question",
+                                                "option_a",
+                                                "option_b",
+                                                "option_c",
+                                                "option_d",
+                                                "option_e",
+                                                "correct_answer",
+                                                "source_file",
+                                            ],
                                         },
                                     }
                                 }
@@ -305,6 +318,10 @@ def normalize_language(language: str | None) -> str | None:
         return None
     normalized = LANGUAGE_ALIASES.get(language.strip().casefold())
     return normalized or language.strip().upper()
+
+
+def clamp_limit(limit: int, maximum: int) -> int:
+    return max(1, min(limit, maximum))
 
 
 def row_to_result(row: pd.Series) -> SearchResult:
@@ -451,8 +468,9 @@ def actions_search(
         Query(description="Assignment, Transcript, Quiz, Youtube Link, Other, or Lecture Notes."),
     ] = None,
     course_title: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+    limit: Annotated[int, Query(ge=1)] = 5,
 ) -> list[dict[str, str]]:
+    limit = clamp_limit(limit, 10)
     df = apply_filters(load_data(), folder_id, language, file_type, course_title)
     query = q.casefold()
     haystack = (
@@ -482,9 +500,14 @@ def actions_lesson(
     folder_id: str,
     language: Annotated[str | None, Query(description="Optional language code.")] = None,
     file_type: Annotated[str | None, Query(description="Optional file type filter.")] = None,
-    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+    limit: Annotated[int, Query(ge=1)] = 5,
 ) -> list[dict[str, str]]:
+    limit = clamp_limit(limit, 10)
     df = apply_filters(load_data(), folder_id=folder_id, language=language, file_type=file_type)
+    if not file_type:
+        transcript_df = df[df["File_Type"].str.casefold() == "transcript"]
+        if not transcript_df.empty:
+            df = transcript_df
     return [row_to_compact_result(row) for _, row in df.head(limit).iterrows()]
 
 
@@ -537,8 +560,9 @@ def actions_quiz(
     language: Annotated[str | None, Query(description="Optional language code.")] = None,
     course_title: str | None = None,
     reveal_answers: Annotated[bool, Query(description="Set true only when the user asks for answers.")] = False,
-    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+    limit: Annotated[int, Query(ge=1)] = 5,
 ) -> list[dict[str, Any]]:
+    limit = clamp_limit(limit, 10)
     questions = quiz(folder_id, language, course_title, reveal_answers, limit)
     response: list[dict[str, Any]] = []
     for question in questions:
@@ -547,11 +571,14 @@ def actions_quiz(
             "language": question.language or "",
             "course_title": question.course_title or "",
             "question": question.question,
-            "options": question.options,
+            "option_a": question.options.get("A", ""),
+            "option_b": question.options.get("B", ""),
+            "option_c": question.options.get("C", ""),
+            "option_d": question.options.get("D", ""),
+            "option_e": question.options.get("E", ""),
+            "correct_answer": (question.correct_answer or "") if reveal_answers else "",
             "source_file": question.source_file or "",
         }
-        if reveal_answers:
-            item["correct_answer"] = question.correct_answer or ""
         response.append(item)
     return response
 
@@ -573,6 +600,7 @@ def courses(
 def actions_courses(
     language: str | None = None,
     q: Annotated[str | None, Query(description="Optional text filter for course titles.")] = None,
-    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    limit: Annotated[int, Query(ge=1)] = 20,
 ) -> list[str]:
+    limit = clamp_limit(limit, 50)
     return courses(language, q, limit)
