@@ -296,6 +296,10 @@ def clean_value(value: Any) -> str | None:
     return text or None
 
 
+def action_value(value: Any) -> str:
+    return clean_value(value) or ""
+
+
 def normalize_language(language: str | None) -> str | None:
     if not language:
         return None
@@ -330,21 +334,21 @@ def compact_text(value: Any, max_chars: int = 1200) -> str | None:
     return text[:max_chars].rstrip() + "..."
 
 
-def row_to_compact_result(row: pd.Series, max_content_chars: int = 1200) -> dict[str, str | None]:
+def row_to_compact_result(row: pd.Series, max_content_chars: int = 1200) -> dict[str, str]:
     return {
-        "folder_id": clean_value(row.get("Folder_ID")),
-        "file_name": clean_value(row.get("File_Name")),
-        "file_type": clean_value(row.get("File_Type")),
-        "language": clean_value(row.get("Language")),
-        "course_title": clean_value(row.get("Course_Title")),
-        "content_preview": compact_text(row.get("Content"), max_content_chars),
-        "question": clean_value(row.get("Question")),
-        "option_a": clean_value(row.get("Option_A")),
-        "option_b": clean_value(row.get("Option_B")),
-        "option_c": clean_value(row.get("Option_C")),
-        "option_d": clean_value(row.get("Option_D")),
-        "option_e": clean_value(row.get("Option_E")),
-        "correct_answer": clean_value(row.get("Correct_Answer")),
+        "folder_id": action_value(row.get("Folder_ID")),
+        "file_name": action_value(row.get("File_Name")),
+        "file_type": action_value(row.get("File_Type")),
+        "language": action_value(row.get("Language")),
+        "course_title": action_value(row.get("Course_Title")),
+        "content_preview": compact_text(row.get("Content"), max_content_chars) or "",
+        "question": action_value(row.get("Question")),
+        "option_a": action_value(row.get("Option_A")),
+        "option_b": action_value(row.get("Option_B")),
+        "option_c": action_value(row.get("Option_C")),
+        "option_d": action_value(row.get("Option_D")),
+        "option_e": action_value(row.get("Option_E")),
+        "correct_answer": action_value(row.get("Correct_Answer")),
     }
 
 
@@ -448,7 +452,7 @@ def actions_search(
     ] = None,
     course_title: str | None = None,
     limit: Annotated[int, Query(ge=1, le=10)] = 5,
-) -> list[dict[str, str | None]]:
+) -> list[dict[str, str]]:
     df = apply_filters(load_data(), folder_id, language, file_type, course_title)
     query = q.casefold()
     haystack = (
@@ -479,7 +483,7 @@ def actions_lesson(
     language: Annotated[str | None, Query(description="Optional language code.")] = None,
     file_type: Annotated[str | None, Query(description="Optional file type filter.")] = None,
     limit: Annotated[int, Query(ge=1, le=10)] = 5,
-) -> list[dict[str, str | None]]:
+) -> list[dict[str, str]]:
     df = apply_filters(load_data(), folder_id=folder_id, language=language, file_type=file_type)
     return [row_to_compact_result(row) for _, row in df.head(limit).iterrows()]
 
@@ -534,8 +538,22 @@ def actions_quiz(
     course_title: str | None = None,
     reveal_answers: Annotated[bool, Query(description="Set true only when the user asks for answers.")] = False,
     limit: Annotated[int, Query(ge=1, le=10)] = 5,
-) -> list[QuizQuestion]:
-    return quiz(folder_id, language, course_title, reveal_answers, limit)
+) -> list[dict[str, Any]]:
+    questions = quiz(folder_id, language, course_title, reveal_answers, limit)
+    response: list[dict[str, Any]] = []
+    for question in questions:
+        item = {
+            "folder_id": question.folder_id or "",
+            "language": question.language or "",
+            "course_title": question.course_title or "",
+            "question": question.question,
+            "options": question.options,
+            "source_file": question.source_file or "",
+        }
+        if reveal_answers:
+            item["correct_answer"] = question.correct_answer or ""
+        response.append(item)
+    return response
 
 
 @app.get("/courses", response_model=list[str], dependencies=[Depends(require_api_key)])
