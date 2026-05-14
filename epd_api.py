@@ -36,6 +36,10 @@ class Metadata(BaseModel):
     course_titles: int
 
 
+class StatusResponse(BaseModel):
+    status: str = Field(description="Current operation status.")
+
+
 class QuizQuestion(BaseModel):
     folder_id: str | None = None
     language: str | None = None
@@ -120,10 +124,10 @@ def apply_filters(
     return filtered
 
 
-@app.get("/health", dependencies=[Depends(require_api_key)])
-def health() -> dict[str, str]:
+@app.get("/health", response_model=StatusResponse, dependencies=[Depends(require_api_key)])
+def health() -> StatusResponse:
     load_data()
-    return {"status": "ok"}
+    return StatusResponse(status="ok")
 
 
 @app.get("/metadata", response_model=Metadata, dependencies=[Depends(require_api_key)])
@@ -138,11 +142,11 @@ def metadata() -> Metadata:
     )
 
 
-@app.post("/reload", dependencies=[Depends(require_api_key)])
-def reload_data() -> dict[str, str]:
+@app.post("/reload", response_model=StatusResponse, dependencies=[Depends(require_api_key)])
+def reload_data() -> StatusResponse:
     load_data.cache_clear()
     load_data()
-    return {"status": "reloaded"}
+    return StatusResponse(status="reloaded")
 
 
 @app.get("/search", response_model=list[SearchResult], dependencies=[Depends(require_api_key)])
