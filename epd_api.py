@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 EXCEL_PATH = os.getenv("EPD_EXCEL_PATH", "EPD_Content_Data.xlsx")
 API_KEY = os.getenv("EPD_API_KEY")
+PUBLIC_BASE_URL = os.getenv("EPD_PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL")
 
 
 class SearchResult(BaseModel):
@@ -45,14 +46,19 @@ class QuizQuestion(BaseModel):
     source_file: str | None = None
 
 
-app = FastAPI(
-    title="EPD Content API",
-    description=(
+app_settings = {
+    "title": "EPD Content API",
+    "description": (
         "API for searching EPD course content, transcripts, assignments, and quiz "
         "questions from EPD_Content_Data.xlsx. Designed for use with ChatGPT GPT Actions."
     ),
-    version="1.0.0",
-)
+    "version": "1.0.0",
+}
+
+if PUBLIC_BASE_URL:
+    app_settings["servers"] = [{"url": PUBLIC_BASE_URL.rstrip("/")}]
+
+app = FastAPI(**app_settings)
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
