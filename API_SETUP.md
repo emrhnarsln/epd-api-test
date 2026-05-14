@@ -16,6 +16,12 @@ $env:EPD_API_KEY="change-me"
 uvicorn epd_api:app --reload --host 0.0.0.0 --port 8000
 ```
 
+For GPT Actions, set the public API URL so the OpenAPI schema includes a valid `servers` entry:
+
+```powershell
+$env:EPD_PUBLIC_BASE_URL="https://your-render-service.onrender.com"
+```
+
 Optional custom Excel path:
 
 ```powershell
