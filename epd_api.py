@@ -81,7 +81,7 @@ def actions_openapi_schema() -> dict[str, Any]:
         },
         "servers": [{"url": public_base_url().rstrip("/")}],
         "paths": {
-            "/metadata": {
+            "/actions/metadata": {
                 "get": {
                     "operationId": "getMetadata",
                     "summary": "Get dataset metadata",
@@ -108,7 +108,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     },
                 }
             },
-            "/courses": {
+            "/actions/courses": {
                 "get": {
                     "operationId": "listCourses",
                     "summary": "List course titles",
@@ -135,7 +135,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     },
                 }
             },
-            "/search": {
+            "/actions/search": {
                 "get": {
                     "operationId": "searchContent",
                     "summary": "Search course content",
@@ -156,7 +156,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     "responses": {"200": {"description": "Search results", "content": {"application/json": {"schema": search_result_array_schema()}}}},
                 }
             },
-            "/lessons/{folder_id}": {
+            "/actions/lessons/{folder_id}": {
                 "get": {
                     "operationId": "getLessonByFolder",
                     "summary": "Get records for a lesson folder",
@@ -175,7 +175,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     "responses": {"200": {"description": "Lesson records", "content": {"application/json": {"schema": search_result_array_schema()}}}},
                 }
             },
-            "/quiz": {
+            "/actions/quiz": {
                 "get": {
                     "operationId": "getQuizQuestions",
                     "summary": "Get quiz questions",
@@ -243,7 +243,7 @@ def search_result_array_schema() -> dict[str, Any]:
                 "file_type": text_or_null,
                 "language": text_or_null,
                 "course_title": text_or_null,
-                "content": text_or_null,
+                "content_preview": text_or_null,
                 "question": text_or_null,
                 "option_a": text_or_null,
                 "option_b": text_or_null,
@@ -284,6 +284,33 @@ def row_to_result(row: pd.Series) -> SearchResult:
         option_e=clean_value(row.get("Option_E")),
         correct_answer=clean_value(row.get("Correct_Answer")),
     )
+
+
+def compact_text(value: Any, max_chars: int = 1200) -> str | None:
+    text = clean_value(value)
+    if not text:
+        return None
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "..."
+
+
+def row_to_compact_result(row: pd.Series, max_content_chars: int = 1200) -> dict[str, str | None]:
+    return {
+        "folder_id": clean_value(row.get("Folder_ID")),
+        "file_name": clean_value(row.get("File_Name")),
+        "file_type": clean_value(row.get("File_Type")),
+        "language": clean_value(row.get("Language")),
+        "course_title": clean_value(row.get("Course_Title")),
+        "content_preview": compact_text(row.get("Content"), max_content_chars),
+        "question": clean_value(row.get("Question")),
+        "option_a": clean_value(row.get("Option_A")),
+        "option_b": clean_value(row.get("Option_B")),
+        "option_c": clean_value(row.get("Option_C")),
+        "option_d": clean_value(row.get("Option_D")),
+        "option_e": clean_value(row.get("Option_E")),
+        "correct_answer": clean_value(row.get("Correct_Answer")),
+    }
 
 
 @lru_cache(maxsize=1)
@@ -337,6 +364,11 @@ def metadata() -> Metadata:
     )
 
 
+@app.get("/actions/metadata", include_in_schema=False, dependencies=[Depends(require_api_key)])
+def actions_metadata() -> Metadata:
+    return metadata()
+
+
 @app.post("/reload", response_model=StatusResponse, dependencies=[Depends(require_api_key)])
 def reload_data() -> StatusResponse:
     load_data.cache_clear()
@@ -369,6 +401,31 @@ def search(
     return [row_to_result(row) for _, row in matches.iterrows()]
 
 
+@app.get("/actions/search", include_in_schema=False, dependencies=[Depends(require_api_key)])
+def actions_search(
+    q: Annotated[str, Query(description="Text to search in course titles, content, and questions.")] = "",
+    folder_id: str | None = None,
+    language: Annotated[str | None, Query(description="Language code such as EN, TR, PT, CS, SK, LV, CZ.")] = None,
+    file_type: Annotated[
+        str | None,
+        Query(description="Assignment, Transcript, Quiz, Youtube Link, Other, or Lecture Notes."),
+    ] = None,
+    course_title: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+) -> list[dict[str, str | None]]:
+    df = apply_filters(load_data(), folder_id, language, file_type, course_title)
+    query = q.casefold()
+    haystack = (
+        df["Course_Title"].str.casefold()
+        + " "
+        + df["Content"].str.casefold()
+        + " "
+        + df["Question"].str.casefold()
+    )
+    matches = df[haystack.str.contains(query, na=False)].head(limit)
+    return [row_to_compact_result(row) for _, row in matches.iterrows()]
+
+
 @app.get("/lessons/{folder_id}", response_model=list[SearchResult], dependencies=[Depends(require_api_key)])
 def lesson(
     folder_id: str,
@@ -378,6 +435,17 @@ def lesson(
 ) -> list[SearchResult]:
     df = apply_filters(load_data(), folder_id=folder_id, language=language, file_type=file_type)
     return [row_to_result(row) for _, row in df.head(limit).iterrows()]
+
+
+@app.get("/actions/lessons/{folder_id}", include_in_schema=False, dependencies=[Depends(require_api_key)])
+def actions_lesson(
+    folder_id: str,
+    language: Annotated[str | None, Query(description="Optional language code.")] = None,
+    file_type: Annotated[str | None, Query(description="Optional file type filter.")] = None,
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+) -> list[dict[str, str | None]]:
+    df = apply_filters(load_data(), folder_id=folder_id, language=language, file_type=file_type)
+    return [row_to_compact_result(row) for _, row in df.head(limit).iterrows()]
 
 
 @app.get("/quiz", response_model=list[QuizQuestion], dependencies=[Depends(require_api_key)])
@@ -423,6 +491,17 @@ def quiz(
     return questions
 
 
+@app.get("/actions/quiz", include_in_schema=False, dependencies=[Depends(require_api_key)])
+def actions_quiz(
+    folder_id: str | None = None,
+    language: Annotated[str | None, Query(description="Optional language code.")] = None,
+    course_title: str | None = None,
+    reveal_answers: Annotated[bool, Query(description="Set true only when the user asks for answers.")] = False,
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+) -> list[QuizQuestion]:
+    return quiz(folder_id, language, course_title, reveal_answers, limit)
+
+
 @app.get("/courses", response_model=list[str], dependencies=[Depends(require_api_key)])
 def courses(
     language: str | None = None,
@@ -434,3 +513,12 @@ def courses(
     if q:
         titles = titles[titles.str.casefold().str.contains(q.casefold(), na=False)]
     return titles.sort_values().head(limit).tolist()
+
+
+@app.get("/actions/courses", include_in_schema=False, dependencies=[Depends(require_api_key)])
+def actions_courses(
+    language: str | None = None,
+    q: Annotated[str | None, Query(description="Optional text filter for course titles.")] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[str]:
+    return courses(language, q, limit)

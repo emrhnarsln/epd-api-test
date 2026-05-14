@@ -38,13 +38,67 @@ $env:EPD_EXCEL_PATH="EPD_Content_Data.xlsx"
 - `GET /quiz?folder_id=101&language=EN&reveal_answers=false`
 - `POST /reload`
 
-FastAPI publishes the OpenAPI schema at:
+FastAPI publishes the full OpenAPI schema at:
 
 ```text
 http://localhost:8000/openapi.json
 ```
 
+For Custom GPT Actions, prefer the smaller action-specific schema:
+
+```text
+http://localhost:8000/actions/openapi.json
+```
+
 For a Custom GPT Action, your API must be reachable from the internet. Localhost will not work directly from ChatGPT. Deploy the API to a public host, or use a tunnel such as ngrok for testing.
+
+## Deploy to Google Cloud Run
+
+Install and authenticate the Google Cloud CLI:
+
+```powershell
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+```
+
+Enable the required APIs:
+
+```powershell
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+```
+
+Deploy from the repository root:
+
+```powershell
+gcloud run deploy epd-api --source . --region europe-west1 --allow-unauthenticated
+```
+
+After deployment, Cloud Run prints a service URL like:
+
+```text
+https://epd-api-xxxxx-ew.a.run.app
+```
+
+Set this URL for the OpenAPI `servers` field:
+
+```powershell
+gcloud run services update epd-api --region europe-west1 --set-env-vars EPD_PUBLIC_BASE_URL=https://epd-api-xxxxx-ew.a.run.app
+```
+
+Optional API key:
+
+```powershell
+gcloud run services update epd-api --region europe-west1 --set-env-vars EPD_API_KEY=change-me
+```
+
+Test:
+
+```text
+https://epd-api-xxxxx-ew.a.run.app/health
+https://epd-api-xxxxx-ew.a.run.app/metadata
+https://epd-api-xxxxx-ew.a.run.app/openapi.json
+https://epd-api-xxxxx-ew.a.run.app/actions/openapi.json
+```
 
 ## GPT Action setup
 
@@ -52,7 +106,7 @@ For a Custom GPT Action, your API must be reachable from the internet. Localhost
 2. Go to `Configure`.
 3. Open `Actions`.
 4. Create a new action.
-5. Import the schema from your public `/openapi.json` URL, or paste the schema manually.
+5. Import the schema from your public `/actions/openapi.json` URL, or paste the schema manually.
 6. If `EPD_API_KEY` is enabled, configure authentication as an API key with header name:
 
 ```text
