@@ -65,6 +65,197 @@ if PUBLIC_BASE_URL:
 app = FastAPI(**app_settings)
 
 
+def public_base_url() -> str:
+    return PUBLIC_BASE_URL or "https://epd-api-653466732834.europe-west1.run.app"
+
+
+@app.get("/actions/openapi.json", include_in_schema=False)
+def actions_openapi_schema() -> dict[str, Any]:
+    """Small OpenAPI schema tailored for ChatGPT GPT Actions."""
+    return {
+        "openapi": "3.0.3",
+        "info": {
+            "title": "EPD Content API Actions",
+            "description": "Search and retrieve EPD course content and quiz questions.",
+            "version": "1.0.0",
+        },
+        "servers": [{"url": public_base_url().rstrip("/")}],
+        "paths": {
+            "/metadata": {
+                "get": {
+                    "operationId": "getMetadata",
+                    "summary": "Get dataset metadata",
+                    "description": "Returns row counts, available languages, file types, and course title count.",
+                    "responses": {
+                        "200": {
+                            "description": "Dataset metadata",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "rows": {"type": "integer"},
+                                            "folders": {"type": "integer"},
+                                            "languages": {"type": "array", "items": {"type": "string"}},
+                                            "file_types": {"type": "array", "items": {"type": "string"}},
+                                            "course_titles": {"type": "integer"},
+                                        },
+                                        "required": ["rows", "folders", "languages", "file_types", "course_titles"],
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/courses": {
+                "get": {
+                    "operationId": "listCourses",
+                    "summary": "List course titles",
+                    "description": "Lists course titles, optionally filtered by language and text query.",
+                    "parameters": [
+                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "q", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+                        },
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Course titles",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"type": "array", "items": {"type": "string"}}
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/search": {
+                "get": {
+                    "operationId": "searchContent",
+                    "summary": "Search course content",
+                    "description": "Searches course titles, content, and quiz questions.",
+                    "parameters": [
+                        {"name": "q", "in": "query", "required": True, "schema": {"type": "string"}},
+                        {"name": "folder_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "file_type", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "course_title", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                        },
+                    ],
+                    "responses": {"200": {"description": "Search results", "content": {"application/json": {"schema": search_result_array_schema()}}}},
+                }
+            },
+            "/lessons/{folder_id}": {
+                "get": {
+                    "operationId": "getLessonByFolder",
+                    "summary": "Get records for a lesson folder",
+                    "description": "Returns records for a specific Folder_ID.",
+                    "parameters": [
+                        {"name": "folder_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "file_type", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+                        },
+                    ],
+                    "responses": {"200": {"description": "Lesson records", "content": {"application/json": {"schema": search_result_array_schema()}}}},
+                }
+            },
+            "/quiz": {
+                "get": {
+                    "operationId": "getQuizQuestions",
+                    "summary": "Get quiz questions",
+                    "description": "Returns quiz questions. Keep reveal_answers false unless the user explicitly asks for answers.",
+                    "parameters": [
+                        {"name": "folder_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "course_title", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {
+                            "name": "reveal_answers",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "boolean", "default": False},
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                        },
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Quiz questions",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "folder_id": {"type": "string"},
+                                                "language": {"type": "string"},
+                                                "course_title": {"type": "string"},
+                                                "question": {"type": "string"},
+                                                "options": {
+                                                    "type": "object",
+                                                    "additionalProperties": {"type": "string"},
+                                                },
+                                                "correct_answer": {"type": "string"},
+                                                "source_file": {"type": "string"},
+                                            },
+                                            "required": ["question", "options"],
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+        },
+    }
+
+
+def search_result_array_schema() -> dict[str, Any]:
+    text_or_null = {"type": "string"}
+    return {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "folder_id": text_or_null,
+                "file_name": text_or_null,
+                "file_type": text_or_null,
+                "language": text_or_null,
+                "course_title": text_or_null,
+                "content": text_or_null,
+                "question": text_or_null,
+                "option_a": text_or_null,
+                "option_b": text_or_null,
+                "option_c": text_or_null,
+                "option_d": text_or_null,
+                "option_e": text_or_null,
+                "correct_answer": text_or_null,
+            },
+        },
+    }
+
+
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     if API_KEY and x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
