@@ -10,6 +10,29 @@ from pydantic import BaseModel, Field
 EXCEL_PATH = os.getenv("EPD_EXCEL_PATH", "EPD_Content_Data.xlsx")
 API_KEY = os.getenv("EPD_API_KEY")
 PUBLIC_BASE_URL = os.getenv("EPD_PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL")
+LANGUAGE_ALIASES = {
+    "english": "EN",
+    "en": "EN",
+    "turkish": "TR",
+    "turkce": "TR",
+    "türkçe": "TR",
+    "tr": "TR",
+    "portuguese": "PT",
+    "portekizce": "PT",
+    "pt": "PT",
+    "czech": "CZ",
+    "çekçe": "CZ",
+    "cekce": "CZ",
+    "cz": "CZ",
+    "cs": "CS",
+    "slovak": "SK",
+    "slovakça": "SK",
+    "slovakca": "SK",
+    "sk": "SK",
+    "latvian": "LV",
+    "letonca": "LV",
+    "lv": "LV",
+}
 
 
 class SearchResult(BaseModel):
@@ -72,6 +95,11 @@ def public_base_url() -> str:
 @app.get("/actions/openapi.json", include_in_schema=False)
 def actions_openapi_schema() -> dict[str, Any]:
     """Small OpenAPI schema tailored for ChatGPT GPT Actions."""
+    language_schema = {
+        "type": "string",
+        "enum": ["EN", "TR", "PT", "CS", "SK", "LV", "CZ"],
+        "description": "Use a language code, not the full language name.",
+    }
     return {
         "openapi": "3.1.0",
         "info": {
@@ -114,7 +142,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     "summary": "List course titles",
                     "description": "Lists course titles, optionally filtered by language and text query.",
                     "parameters": [
-                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "language", "in": "query", "required": False, "schema": language_schema},
                         {"name": "q", "in": "query", "required": False, "schema": {"type": "string"}},
                         {
                             "name": "limit",
@@ -143,7 +171,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     "parameters": [
                         {"name": "q", "in": "query", "required": True, "schema": {"type": "string"}},
                         {"name": "folder_id", "in": "query", "required": False, "schema": {"type": "string"}},
-                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "language", "in": "query", "required": False, "schema": language_schema},
                         {"name": "file_type", "in": "query", "required": False, "schema": {"type": "string"}},
                         {"name": "course_title", "in": "query", "required": False, "schema": {"type": "string"}},
                         {
@@ -163,7 +191,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     "description": "Returns records for a specific Folder_ID.",
                     "parameters": [
                         {"name": "folder_id", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "language", "in": "query", "required": False, "schema": language_schema},
                         {"name": "file_type", "in": "query", "required": False, "schema": {"type": "string"}},
                         {
                             "name": "limit",
@@ -182,7 +210,7 @@ def actions_openapi_schema() -> dict[str, Any]:
                     "description": "Returns quiz questions. Keep reveal_answers false unless the user explicitly asks for answers.",
                     "parameters": [
                         {"name": "folder_id", "in": "query", "required": False, "schema": {"type": "string"}},
-                        {"name": "language", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "language", "in": "query", "required": False, "schema": language_schema},
                         {"name": "course_title", "in": "query", "required": False, "schema": {"type": "string"}},
                         {
                             "name": "reveal_answers",
@@ -268,6 +296,13 @@ def clean_value(value: Any) -> str | None:
     return text or None
 
 
+def normalize_language(language: str | None) -> str | None:
+    if not language:
+        return None
+    normalized = LANGUAGE_ALIASES.get(language.strip().casefold())
+    return normalized or language.strip().upper()
+
+
 def row_to_result(row: pd.Series) -> SearchResult:
     return SearchResult(
         folder_id=clean_value(row.get("Folder_ID")),
@@ -329,6 +364,7 @@ def apply_filters(
     course_title: str | None = None,
 ) -> pd.DataFrame:
     filtered = df
+    language = normalize_language(language)
     if folder_id:
         filtered = filtered[filtered["Folder_ID"].str.casefold() == folder_id.casefold()]
     if language:
