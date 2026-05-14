@@ -126,7 +126,11 @@ def apply_filters(
 
 @app.get("/health", response_model=StatusResponse, dependencies=[Depends(require_api_key)])
 def health() -> StatusResponse:
-    load_data()
+    return StatusResponse(status="ok")
+
+
+@app.get("/", response_model=StatusResponse, dependencies=[Depends(require_api_key)])
+def root() -> StatusResponse:
     return StatusResponse(status="ok")
 
 
